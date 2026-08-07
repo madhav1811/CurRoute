@@ -2382,6 +2382,7 @@ document.getElementById('notifyToggle').addEventListener('change', async (e)=>{
       sub.textContent = 'On — nudges you when you open the app without a logged expense today.';
       timeRow.style.display = 'flex';
       await displayNotification('CurRoute', { body: "You're all set. We'll remind you to log today's spending.", icon:'icons/icon-192.png' });
+      await maybeShowDailyReminder();
       startReminderPolling();
     } else {
       settings.notify = false; saveSettings(settings);
@@ -2422,6 +2423,15 @@ async function maybeShowDailyReminder(){
     saveSettings(settings);
   }
 }
+
+document.getElementById('reminderTimeInput').addEventListener('change', async (e)=>{
+  settings.reminderTime = e.target.value || '';
+  saveSettings(settings);
+  if(settings.notify && Notification.permission === 'granted'){
+    await maybeShowDailyReminder();
+    startReminderPolling();
+  }
+});
 
 document.getElementById('nameInput').addEventListener('blur', (e)=>{
   settings.name = e.target.value.trim() || 'My Ledger';
@@ -2883,7 +2893,10 @@ function renderAll(){
   if(activeTab === 'profile') renderProfile();
 }
 renderAll();
-maybeShowDailyReminder();
+if(settings.notify && 'Notification' in window && Notification.permission === 'granted'){
+  startReminderPolling();
+  maybeShowDailyReminder();
+}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
