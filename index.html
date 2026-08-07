@@ -1125,6 +1125,8 @@
 const STORAGE_KEY = 'tally_entries_v1';
 const SETTINGS_KEY = 'tally_settings_v1';
 const LOCK_KEY = 'curroute_lock_v1';
+const PUSH_SERVER_URL = 'https://curroute-push.YOUR-SUBDOMAIN.workers.dev';
+const VAPID_PUBLIC_KEY = 'BKu9EbwR-RIv6jMi15jWGtvzmy083xOAionsWcHoAyKE_rbe1jTlSl4QruZ01M8DyCczzIP89oba2HtNFm-bAxk';
 
 function loadLock(){
   try{ return Object.assign({enabled:false, pinHash:null, salt:null, pinLength:0, biometricEnabled:false, credentialId:null}, JSON.parse(localStorage.getItem(LOCK_KEY)) || {}); }
@@ -2324,8 +2326,6 @@ document.getElementById('themeLightBtn').addEventListener('click', ()=>{
   settings.theme = 'light'; saveSettings(settings); applyTheme('light'); renderProfile();
 });
 
-let reminderTimerId = null;
-
 async function requestNotificationPermission(){
   if(!('Notification' in window)) return 'unsupported';
   if(Notification.permission === 'granted') return 'granted';
@@ -2353,39 +2353,79 @@ async function displayNotification(title, options){
   }catch(_){ }
 }
 
-function clearReminderSchedule(){
-  if(!reminderTimerId) return;
-  clearTimeout(reminderTimerId);
-  reminderTimerId = null;
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for(let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
 }
 
-function scheduleDailyReminder(){
-  clearReminderSchedule();
-  if(!settings.notify || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const today = todayISO();
-  if(settings.lastReminderShown === today) return;
-  if(entries.some(e => e.date === today)) return;
-
-  let targetHour = 20, targetMinute = 0;
-  if(settings.reminderTime){
-    const parts = settings.reminderTime.split(':');
-    targetHour = parseInt(parts[0], 10) || 20;
-    targetMinute = parseInt(parts[1], 10) || 0;
+/* Real scheduled reminders via a Web Push server (push-server/), so the
+   notification fires at the set time even when the app/phone is closed. */
+async function getPushSubscription(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    return sub;
+  }catch(_){
+    return null;
   }
+}
 
-  const now = new Date();
-  const target = new Date(now);
-  target.setHours(targetHour, targetMinute, 0, 0);
-  const delay = target.getTime() - now.getTime();
-  if(delay <= 0){
-    maybeShowDailyReminder().catch(()=>{});
-    return;
+async function syncPushSubscription(){
+  const sub = await getPushSubscription();
+  if(!sub) return false;
+  try{
+    await fetch(`${PUSH_SERVER_URL}/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subscription: sub.toJSON(),
+        reminderTime: settings.reminderTime || '20:00',
+        tzOffsetMinutes: new Date().getTimezoneOffset(),
+      }),
+    });
+    return true;
+  }catch(_){
+    return false;
   }
+}
 
-  reminderTimerId = setTimeout(async ()=>{
-    await maybeShowDailyReminder();
-    scheduleDailyReminder();
-  }, delay);
+async function unregisterPushSubscription(){
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if(sub){
+      await fetch(`${PUSH_SERVER_URL}/unsubscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      }).catch(()=>{});
+      await sub.unsubscribe();
+    }
+  }catch(_){ }
+}
+
+async function notifyServerLoggedToday(date){
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if(!sub) return;
+    await fetch(`${PUSH_SERVER_URL}/logged`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: sub.endpoint, date }),
+    });
+  }catch(_){ }
 }
 
 /* Notifications: best-effort local reminder (no server, so it only fires while the app is open) */
@@ -2398,16 +2438,17 @@ document.getElementById('notifyToggle').addEventListener('change', async (e)=>{
       sub.textContent = 'Notifications are not supported in this browser.';
       e.target.checked = false;
       settings.notify = false; saveSettings(settings);
-      clearReminderSchedule();
       return;
     }
     const perm = await requestNotificationPermission();
     if(perm === 'granted'){
       settings.notify = true; saveSettings(settings);
-      sub.textContent = 'On — nudges you when you open the app without a logged expense today.';
+      const synced = await syncPushSubscription();
+      sub.textContent = synced
+        ? 'On — you’ll get a notification at the time below, even if the app is closed.'
+        : 'Permission granted, but the reminder server is unreachable right now.';
       timeRow.style.display = 'flex';
       await displayNotification('CurRoute', { body: "You're all set. We'll remind you to log today's spending.", icon:'icons/icon-192.png' });
-      scheduleDailyReminder();
     } else {
       settings.notify = false; saveSettings(settings);
       e.target.checked = false;
@@ -2415,44 +2456,20 @@ document.getElementById('notifyToggle').addEventListener('change', async (e)=>{
         ? 'Notifications are not enabled — allow them in browser settings.'
         : 'Permission denied — enable notifications for this site in iOS Settings to turn this on.';
       timeRow.style.display = 'none';
-      clearReminderSchedule();
     }
   } else {
     settings.notify = false; saveSettings(settings);
     sub.textContent = "Nudge me to log today's spending";
     timeRow.style.display = 'none';
-    clearReminderSchedule();
+    await unregisterPushSubscription();
   }
 });
-
-async function maybeShowDailyReminder(){
-  if(!settings.notify) return;
-  if(!('Notification' in window) || Notification.permission !== 'granted') return;
-  const today = todayISO();
-  if(settings.lastReminderShown === today) return;
-  const hasToday = entries.some(e => e.date === today);
-  if(hasToday) return;
-
-  let targetHour = 20, targetMinute = 0; // default 8:00 PM
-  if(settings.reminderTime){
-    const parts = settings.reminderTime.split(':');
-    targetHour = parseInt(parts[0], 10);
-    targetMinute = parseInt(parts[1], 10) || 0;
-  }
-  const now = new Date();
-  const pastTarget = now.getHours() > targetHour || (now.getHours() === targetHour && now.getMinutes() >= targetMinute);
-  if(pastTarget){
-    await displayNotification('CurRoute', { body: "Don't forget to log today's spending.", icon:'icons/icon-192.png' });
-    settings.lastReminderShown = today;
-    saveSettings(settings);
-  }
-}
 
 document.getElementById('reminderTimeInput').addEventListener('change', async (e)=>{
   settings.reminderTime = e.target.value || '';
   saveSettings(settings);
   if(settings.notify && Notification.permission === 'granted'){
-    scheduleDailyReminder();
+    syncPushSubscription();
   }
 });
 
@@ -2531,17 +2548,9 @@ document.getElementById('saveSettingsBtn').addEventListener('click', async ()=>{
   settings.reminderTime = document.getElementById('reminderTimeInput').value || '';
   saveSettings(settings);
   if(settings.notify && Notification.permission === 'granted'){
-    scheduleDailyReminder();
+    syncPushSubscription();
   }
   renderAll();
-});
-
-document.getElementById('reminderTimeInput').addEventListener('change', async (e)=>{
-  settings.reminderTime = e.target.value || '';
-  saveSettings(settings);
-  if(settings.notify && Notification.permission === 'granted'){
-    scheduleDailyReminder();
-  }
 });
 
 document.getElementById('exportAllBtn').addEventListener('click', ()=> csvFor(entries, `curroute-all-${todayISO()}.csv`));
@@ -2754,6 +2763,7 @@ document.getElementById('saveExpenseBtn').addEventListener('click', ()=>{
   viewDate = toDate(date);
   renderAll();
   if(wasNew) maybeShowStreakToast(date);
+  if(date === todayISO()) notifyServerLoggedToday(date);
 });
 
 document.getElementById('prevMonth').addEventListener('click', ()=>{ viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth()-1, 1); renderAll(); });
@@ -2923,19 +2933,8 @@ function renderAll(){
 }
 renderAll();
 if(settings.notify && 'Notification' in window && Notification.permission === 'granted'){
-  scheduleDailyReminder();
+  syncPushSubscription();
 }
-
-document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState === 'visible' && settings.notify && 'Notification' in window && Notification.permission === 'granted'){
-    scheduleDailyReminder();
-  }
-});
-window.addEventListener('focus', ()=>{
-  if(settings.notify && 'Notification' in window && Notification.permission === 'granted'){
-    scheduleDailyReminder();
-  }
-});
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
