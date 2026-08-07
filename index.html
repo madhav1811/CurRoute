@@ -2499,7 +2499,7 @@ document.getElementById('avatarFileInput').addEventListener('change', (e)=>{
   e.target.value = '';
 });
 
-document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
+document.getElementById('saveSettingsBtn').addEventListener('click', async ()=>{
   const code = document.getElementById('currencyInput').value || 'INR';
   const budgetVal = document.getElementById('budgetInput').value;
   settings.currencyCode = code;
@@ -2507,12 +2507,20 @@ document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
   settings.budget = budgetVal ? parseFloat(budgetVal) : null;
   settings.reminderTime = document.getElementById('reminderTimeInput').value || '';
   saveSettings(settings);
+  if(settings.notify && Notification.permission === 'granted'){
+    await maybeShowDailyReminder();
+    startReminderPolling();
+  }
   renderAll();
 });
 
-document.getElementById('reminderTimeInput').addEventListener('change', (e)=>{
+document.getElementById('reminderTimeInput').addEventListener('change', async (e)=>{
   settings.reminderTime = e.target.value || '';
   saveSettings(settings);
+  if(settings.notify && Notification.permission === 'granted'){
+    await maybeShowDailyReminder();
+    startReminderPolling();
+  }
 });
 
 document.getElementById('exportAllBtn').addEventListener('click', ()=> csvFor(entries, `curroute-all-${todayISO()}.csv`));
