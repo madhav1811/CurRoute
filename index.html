@@ -2324,7 +2324,7 @@ document.getElementById('themeLightBtn').addEventListener('click', ()=>{
   settings.theme = 'light'; saveSettings(settings); applyTheme('light'); renderProfile();
 });
 
-let reminderPollingId = null;
+let reminderTimerId = null;
 
 async function requestNotificationPermission(){
   if(!('Notification' in window)) return 'unsupported';
@@ -2353,15 +2353,39 @@ async function displayNotification(title, options){
   }catch(_){ }
 }
 
-function startReminderPolling(){
-  if(reminderPollingId) return;
-  reminderPollingId = setInterval(()=>{ maybeShowDailyReminder().catch(()=>{}); }, 60000);
+function clearReminderSchedule(){
+  if(!reminderTimerId) return;
+  clearTimeout(reminderTimerId);
+  reminderTimerId = null;
 }
 
-function stopReminderPolling(){
-  if(!reminderPollingId) return;
-  clearInterval(reminderPollingId);
-  reminderPollingId = null;
+function scheduleDailyReminder(){
+  clearReminderSchedule();
+  if(!settings.notify || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const today = todayISO();
+  if(settings.lastReminderShown === today) return;
+  if(entries.some(e => e.date === today)) return;
+
+  let targetHour = 20, targetMinute = 0;
+  if(settings.reminderTime){
+    const parts = settings.reminderTime.split(':');
+    targetHour = parseInt(parts[0], 10) || 20;
+    targetMinute = parseInt(parts[1], 10) || 0;
+  }
+
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(targetHour, targetMinute, 0, 0);
+  const delay = target.getTime() - now.getTime();
+  if(delay <= 0){
+    maybeShowDailyReminder().catch(()=>{});
+    return;
+  }
+
+  reminderTimerId = setTimeout(async ()=>{
+    await maybeShowDailyReminder();
+    scheduleDailyReminder();
+  }, delay);
 }
 
 /* Notifications: best-effort local reminder (no server, so it only fires while the app is open) */
@@ -2374,6 +2398,7 @@ document.getElementById('notifyToggle').addEventListener('change', async (e)=>{
       sub.textContent = 'Notifications are not supported in this browser.';
       e.target.checked = false;
       settings.notify = false; saveSettings(settings);
+      clearReminderSchedule();
       return;
     }
     const perm = await requestNotificationPermission();
@@ -2382,8 +2407,7 @@ document.getElementById('notifyToggle').addEventListener('change', async (e)=>{
       sub.textContent = 'On — nudges you when you open the app without a logged expense today.';
       timeRow.style.display = 'flex';
       await displayNotification('CurRoute', { body: "You're all set. We'll remind you to log today's spending.", icon:'icons/icon-192.png' });
-      await maybeShowDailyReminder();
-      startReminderPolling();
+      scheduleDailyReminder();
     } else {
       settings.notify = false; saveSettings(settings);
       e.target.checked = false;
@@ -2391,13 +2415,13 @@ document.getElementById('notifyToggle').addEventListener('change', async (e)=>{
         ? 'Notifications are not enabled — allow them in browser settings.'
         : 'Permission denied — enable notifications for this site in iOS Settings to turn this on.';
       timeRow.style.display = 'none';
-      stopReminderPolling();
+      clearReminderSchedule();
     }
   } else {
     settings.notify = false; saveSettings(settings);
     sub.textContent = "Nudge me to log today's spending";
     timeRow.style.display = 'none';
-    stopReminderPolling();
+    clearReminderSchedule();
   }
 });
 
@@ -2428,8 +2452,7 @@ document.getElementById('reminderTimeInput').addEventListener('change', async (e
   settings.reminderTime = e.target.value || '';
   saveSettings(settings);
   if(settings.notify && Notification.permission === 'granted'){
-    await maybeShowDailyReminder();
-    startReminderPolling();
+    scheduleDailyReminder();
   }
 });
 
@@ -2508,8 +2531,7 @@ document.getElementById('saveSettingsBtn').addEventListener('click', async ()=>{
   settings.reminderTime = document.getElementById('reminderTimeInput').value || '';
   saveSettings(settings);
   if(settings.notify && Notification.permission === 'granted'){
-    await maybeShowDailyReminder();
-    startReminderPolling();
+    scheduleDailyReminder();
   }
   renderAll();
 });
@@ -2518,8 +2540,7 @@ document.getElementById('reminderTimeInput').addEventListener('change', async (e
   settings.reminderTime = e.target.value || '';
   saveSettings(settings);
   if(settings.notify && Notification.permission === 'granted'){
-    await maybeShowDailyReminder();
-    startReminderPolling();
+    scheduleDailyReminder();
   }
 });
 
@@ -2902,9 +2923,19 @@ function renderAll(){
 }
 renderAll();
 if(settings.notify && 'Notification' in window && Notification.permission === 'granted'){
-  startReminderPolling();
-  maybeShowDailyReminder();
+  scheduleDailyReminder();
 }
+
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible' && settings.notify && 'Notification' in window && Notification.permission === 'granted'){
+    scheduleDailyReminder();
+  }
+});
+window.addEventListener('focus', ()=>{
+  if(settings.notify && 'Notification' in window && Notification.permission === 'granted'){
+    scheduleDailyReminder();
+  }
+});
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
