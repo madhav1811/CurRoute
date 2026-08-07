@@ -2324,8 +2324,48 @@ document.getElementById('themeLightBtn').addEventListener('click', ()=>{
   settings.theme = 'light'; saveSettings(settings); applyTheme('light'); renderProfile();
 });
 
+let reminderPollingId = null;
+
+async function requestNotificationPermission(){
+  if(!('Notification' in window)) return 'unsupported';
+  if(Notification.permission === 'granted') return 'granted';
+  if(typeof Notification.requestPermission !== 'function') return 'unsupported';
+  try{
+    return await Notification.requestPermission();
+  }catch(_){
+    return 'denied';
+  }
+}
+
+async function displayNotification(title, options){
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  if('serviceWorker' in navigator){
+    try{
+      const registration = await navigator.serviceWorker.ready;
+      if(registration && typeof registration.showNotification === 'function'){
+        await registration.showNotification(title, options);
+        return;
+      }
+    }catch(_){ /* fallback to page notification */ }
+  }
+  try{
+    new Notification(title, options);
+  }catch(_){ }
+}
+
+function startReminderPolling(){
+  if(reminderPollingId) return;
+  reminderPollingId = setInterval(()=>{ maybeShowDailyReminder().catch(()=>{}); }, 60000);
+}
+
+function stopReminderPolling(){
+  if(!reminderPollingId) return;
+  clearInterval(reminderPollingId);
+  reminderPollingId = null;
+}
+
 /* Notifications: best-effort local reminder (no server, so it only fires while the app is open) */
-document.getElementById('notifyToggle').addEventListener('change', (e)=>{
+document.getElementById('notifyToggle').addEventListener('change', async (e)=>{
   const on = e.target.checked;
   const sub = document.getElementById('notifySub');
   const timeRow = document.getElementById('reminderTimeRow');
@@ -2336,27 +2376,31 @@ document.getElementById('notifyToggle').addEventListener('change', (e)=>{
       settings.notify = false; saveSettings(settings);
       return;
     }
-    Notification.requestPermission().then(perm=>{
-      if(perm === 'granted'){
-        settings.notify = true; saveSettings(settings);
-        sub.textContent = 'On — nudges you when you open the app without a logged expense today.';
-        timeRow.style.display = 'flex';
-        new Notification('CurRoute', { body: "You're all set. We'll remind you to log today's spending.", icon:'icons/icon-192.png' });
-      } else {
-        settings.notify = false; saveSettings(settings);
-        e.target.checked = false;
-        sub.textContent = 'Permission denied — enable notifications for this site in iOS Settings to turn this on.';
-        timeRow.style.display = 'none';
-      }
-    });
+    const perm = await requestNotificationPermission();
+    if(perm === 'granted'){
+      settings.notify = true; saveSettings(settings);
+      sub.textContent = 'On — nudges you when you open the app without a logged expense today.';
+      timeRow.style.display = 'flex';
+      await displayNotification('CurRoute', { body: "You're all set. We'll remind you to log today's spending.", icon:'icons/icon-192.png' });
+      startReminderPolling();
+    } else {
+      settings.notify = false; saveSettings(settings);
+      e.target.checked = false;
+      sub.textContent = perm === 'default'
+        ? 'Notifications are not enabled — allow them in browser settings.'
+        : 'Permission denied — enable notifications for this site in iOS Settings to turn this on.';
+      timeRow.style.display = 'none';
+      stopReminderPolling();
+    }
   } else {
     settings.notify = false; saveSettings(settings);
     sub.textContent = "Nudge me to log today's spending";
     timeRow.style.display = 'none';
+    stopReminderPolling();
   }
 });
 
-function maybeShowDailyReminder(){
+async function maybeShowDailyReminder(){
   if(!settings.notify) return;
   if(!('Notification' in window) || Notification.permission !== 'granted') return;
   const today = todayISO();
@@ -2373,7 +2417,7 @@ function maybeShowDailyReminder(){
   const now = new Date();
   const pastTarget = now.getHours() > targetHour || (now.getHours() === targetHour && now.getMinutes() >= targetMinute);
   if(pastTarget){
-    new Notification('CurRoute', { body: "Don't forget to log today's spending.", icon:'icons/icon-192.png' });
+    await displayNotification('CurRoute', { body: "Don't forget to log today's spending.", icon:'icons/icon-192.png' });
     settings.lastReminderShown = today;
     saveSettings(settings);
   }
