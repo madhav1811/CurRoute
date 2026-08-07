@@ -1,4 +1,4 @@
-const CACHE_NAME = 'curroute-cache-v8';
+const CACHE_NAME = 'curroute-cache-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -22,19 +22,6 @@ self.addEventListener('activate', (event) => {
     )
   );
   self.clients.claim();
-});
-
-self.addEventListener('push', (event) => {
-  let data = { title: 'CurRoute', body: "Don't forget to log today's spending." };
-  try{
-    if(event.data) data = Object.assign(data, event.data.json());
-  }catch(_){ }
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'CurRoute', {
-      body: data.body,
-      icon: 'icons/icon-192.png',
-    })
-  );
 });
 
 self.addEventListener('notificationclick', (event) => {
