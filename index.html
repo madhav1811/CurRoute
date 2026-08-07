@@ -2415,7 +2415,9 @@ document.getElementById('notifyToggle').addEventListener('change', async (e)=>{
     }
     const perm = await requestNotificationPermission();
     if(perm === 'granted'){
-      settings.notify = true; saveSettings(settings);
+      settings.notify = true;
+      settings.lastReminderShown = null;
+      saveSettings(settings);
       sub.textContent = 'On — nudges you while the app is open past the time below.';
       timeRow.style.display = 'flex';
       await displayNotification('CurRoute', { body: "You're all set. We'll remind you to log today's spending.", icon:'icons/icon-192.png' });
@@ -2438,6 +2440,7 @@ document.getElementById('notifyToggle').addEventListener('change', async (e)=>{
 
 document.getElementById('reminderTimeInput').addEventListener('change', async (e)=>{
   settings.reminderTime = e.target.value || '';
+  settings.lastReminderShown = null;
   saveSettings(settings);
   if(settings.notify && Notification.permission === 'granted'){
     scheduleDailyReminder();
@@ -2517,6 +2520,7 @@ document.getElementById('saveSettingsBtn').addEventListener('click', async ()=>{
   settings.currency = currencyByCode(code).symbol;
   settings.budget = budgetVal ? parseFloat(budgetVal) : null;
   settings.reminderTime = document.getElementById('reminderTimeInput').value || '';
+  settings.lastReminderShown = null;
   saveSettings(settings);
   if(settings.notify && Notification.permission === 'granted'){
     scheduleDailyReminder();
