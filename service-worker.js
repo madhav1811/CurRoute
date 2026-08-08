@@ -1,4 +1,4 @@
-const CACHE_NAME = 'curroute-cache-v9';
+const CACHE_NAME = 'curroute-cache-v10';
 const ASSETS = [
   './',
   './index.html',

@@ -156,6 +156,9 @@
   }
   .spent-total{ font-family:var(--font-mono); font-weight:700; font-size:38px; letter-spacing:-1px; margin-top:6px; }
   .spent-total .cur{ font-size:22px; color:var(--muted); margin-right:2px; }
+  .cur-sym{ opacity:0.68; font-weight:600; margin-right:1px; letter-spacing:0; }
+  .cur-dec{ opacity:0.6; font-size:0.72em; font-weight:600; letter-spacing:0; }
+  .spent-total .cur-dec{ font-size:0.5em; }
   .spent-caption{ font-size:12px; color:var(--muted); margin-top:2px; }
   .income-net-row{ display:flex; gap:16px; margin-top:10px; }
   .income-net-row .inr-item{ font-size:11.5px; }
@@ -1339,6 +1342,19 @@ let analysisDate = new Date();
 
 /* ---------------- Helpers ---------------- */
 function fmt(n){ n = Number(n)||0; return n.toLocaleString('en-IN', {maximumFractionDigits: n % 1 === 0 ? 0 : 2}); }
+
+function moneyValue(n){
+  n = Number(n) || 0;
+  const neg = n < 0;
+  const cents = Math.round(Math.abs(n) * 100);
+  const whole = Math.floor(cents / 100).toLocaleString('en-IN');
+  const dec = cents % 100;
+  const html = dec === 0 ? whole : `${whole}<span class="cur-dec">.${String(dec).padStart(2,'0')}</span>`;
+  return neg ? `-${html}` : html;
+}
+function money(n){
+  return `<span class="cur-sym">${settings.currency}</span>${moneyValue(n)}`;
+}
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function monthKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 function catInfo(id){ const list = allCategories().concat(INCOME_CATEGORIES); return list.find(c=>c.id===id) || list[list.length-1]; }
@@ -1456,11 +1472,11 @@ function renderHeader(){
   const total = expenseEntries.reduce((s,e)=>s+Number(e.amount),0);
   const income = incomeEntries.reduce((s,e)=>s+Number(e.amount),0);
   const net = income - total;
-  document.getElementById('monthTotal').textContent = fmt(total);
+  document.getElementById('monthTotal').innerHTML = moneyValue(total);
   document.getElementById('monthLabel').textContent = viewDate.toLocaleDateString('en-US', {month:'long', year:'numeric'});
   document.getElementById('incomeNetRow').innerHTML = `
-    <div class="inr-item inr-income">Income<b>${settings.currency}${fmt(income)}</b></div>
-    <div class="inr-item inr-net">Net<b class="${net>=0?'pos':'neg'}">${net>=0?'+':'-'}${settings.currency}${fmt(Math.abs(net))}</b></div>
+    <div class="inr-item inr-income">Income<b>${money(income)}</b></div>
+    <div class="inr-item inr-net">Net<b class="${net>=0?'pos':'neg'}">${net>=0?'+':'-'}${money(Math.abs(net))}</b></div>
   `;
 
   const budgetRow = document.getElementById('budgetRow');
@@ -1468,7 +1484,7 @@ function renderHeader(){
     const pct = Math.min(100, Math.round((total/Number(settings.budget))*100));
     const over = total > Number(settings.budget);
     budgetRow.innerHTML = `
-      <div class="label-row"><span>Monthly budget</span><b>${settings.currency}${fmt(total)} / ${settings.currency}${fmt(settings.budget)}</b></div>
+      <div class="label-row"><span>Monthly budget</span><b>${money(total)} / ${money(settings.budget)}</b></div>
       <div class="meter"><div class="meter-fill ${over?'over':''}" style="width:${pct}%"></div></div>
     `;
   } else {
@@ -1495,7 +1511,7 @@ function buildEntryCardHtml(e){
             <div class="entry-cat">${c.name}</div>
             <div class="entry-note">${noteBits ? noteBits : '&nbsp;'}</div>
           </div>
-          <div class="entry-amount ${isIncome?'income':''}">${isIncome?'+':''}${settings.currency}${fmt(e.amount)}</div>
+          <div class="entry-amount ${isIncome?'income':''}">${isIncome?'+':''}${money(e.amount)}</div>
         </div>
         <div class="entry-actions">
           <button class="edit-btn" data-edit="${e.id}">Edit</button>
@@ -1513,7 +1529,7 @@ function buildDateGroupsHtml(groups, todayStr, yestStr){
     else if(date === yestStr) label = 'Yesterday';
     else label = toDate(date).toLocaleDateString('en-US', {weekday:'short', day:'numeric', month:'short'});
     html += `<div class="date-group">
-      <div class="date-heading"><span>${label}</span><span class="day-total">${settings.currency}${fmt(dayTotal)}</span></div>`;
+      <div class="date-heading"><span>${label}</span><span class="day-total">${money(dayTotal)}</span></div>`;
     dayEntries.forEach(e => { html += buildEntryCardHtml(e); });
     html += `</div>`;
   });
@@ -1613,7 +1629,7 @@ function renderMonthView(){
   const summaryEl = document.getElementById('filterSummary');
   if(filtersOn){
     summaryEl.hidden = false;
-    summaryEl.innerHTML = `<span>${monthEntries.length} match${monthEntries.length===1?'':'es'} · Exp ${settings.currency}${fmt(expTotal)} · Inc ${settings.currency}${fmt(incTotal)}</span><button id="clearFiltersBtn">Clear</button>`;
+    summaryEl.innerHTML = `<span>${monthEntries.length} match${monthEntries.length===1?'':'es'} · Exp ${money(expTotal)} · Inc ${money(incTotal)}</span><button id="clearFiltersBtn">Clear</button>`;
     document.getElementById('clearFiltersBtn').addEventListener('click', ()=>{
       activeFilters = { type:'all', mode:'all', categories:[], minAmount:null, maxAmount:null, search:'' };
       renderMonthView();
@@ -1814,22 +1830,22 @@ function renderAnalysis(){
   document.getElementById('statGrid').innerHTML = `
     <div class="stat-card">
       <div class="s-label">Total spent</div>
-      <div class="s-val">${settings.currency}${fmt(total)}</div>
+      <div class="s-val">${money(total)}</div>
       ${deltaHtml}
     </div>
     <div class="stat-card">
       <div class="s-label">Income</div>
-      <div class="s-val" style="color:var(--forest);">${settings.currency}${fmt(incomeTotal)}</div>
-      <div class="s-delta flat">Net ${incomeTotal-total>=0?'+':'-'}${settings.currency}${fmt(Math.abs(incomeTotal-total))}</div>
+      <div class="s-val" style="color:var(--forest);">${money(incomeTotal)}</div>
+      <div class="s-delta flat">Net ${incomeTotal-total>=0?'+':'-'}${money(Math.abs(incomeTotal-total))}</div>
     </div>
     <div class="stat-card">
       <div class="s-label">Daily average</div>
-      <div class="s-val">${settings.currency}${fmt(dailyAvg)}<small> /day</small></div>
+      <div class="s-val">${money(dailyAvg)}<small> /day</small></div>
     </div>
     <div class="stat-card">
       <div class="s-label">Top category</div>
       <div class="s-val" style="font-size:15px;">${topCat}</div>
-      <div class="s-delta flat">${topCatEntry ? settings.currency+fmt(topCatAmt) : 'No spending yet'}</div>
+      <div class="s-delta flat">${topCatEntry ? money(topCatAmt) : 'No spending yet'}</div>
     </div>
   `;
 
@@ -1839,7 +1855,7 @@ function renderAnalysis(){
   renderBarChart(buildBuckets(periodType, range, list));
   renderDonut(catTotals, total);
 
-  document.getElementById('statementSub').textContent = `${periodLabel(periodType, range)} · ${list.length} ${list.length===1?'entry':'entries'} · ${settings.currency}${fmt(total)} total`;
+  document.getElementById('statementSub').innerHTML = `${periodLabel(periodType, range)} · ${list.length} ${list.length===1?'entry':'entries'} · ${money(total)} total`;
 }
 
 function renderBarChart(buckets){
@@ -2105,7 +2121,7 @@ function renderImportPreview(){
       <select data-idx="${i}" class="ir-cat-select">
         ${catList.map(cc=>`<option value="${cc.id}" ${cc.id===c.category?'selected':''}>${cc.emoji} ${cc.name}</option>`).join('')}
       </select>
-      <div class="ir-amount ${c.type}">${c.type==='income'?'+':'-'}${settings.currency}${fmt(c.amount)}</div>
+      <div class="ir-amount ${c.type}">${c.type==='income'?'+':'-'}${money(c.amount)}</div>
     </div>`;
   }).join('');
   listEl.querySelectorAll('input[type=checkbox]').forEach(cb=>{
@@ -2160,11 +2176,11 @@ document.getElementById('printStatement').addEventListener('click', ()=>{
   const catTotals = {};
   list.forEach(e=>{ catTotals[e.category] = (catTotals[e.category]||0) + Number(e.amount); });
 
-  let rows = list.map(e => `<tr><td>${e.date}</td><td>${catInfo(e.category).name}</td><td>${e.note||''}</td><td>${e.paymentMode==='online' ? (e.paymentApp||'Online') : 'Offline'}</td><td>${settings.currency}${fmt(e.amount)}</td></tr>`).join('');
+  let rows = list.map(e => `<tr><td>${e.date}</td><td>${catInfo(e.category).name}</td><td>${e.note||''}</td><td>${e.paymentMode==='online' ? (e.paymentApp||'Online') : 'Offline'}</td><td>${money(e.amount)}</td></tr>`).join('');
   if(list.length===0) rows = `<tr><td colspan="5">No entries in this period.</td></tr>`;
 
   let catRows = Object.entries(catTotals).sort((a,b)=>b[1]-a[1])
-    .map(([id,amt]) => `<tr><td>${catInfo(id).name}</td><td>${settings.currency}${fmt(amt)}</td><td>${total?Math.round(amt/total*100):0}%</td></tr>`).join('');
+    .map(([id,amt]) => `<tr><td>${catInfo(id).name}</td><td>${money(amt)}</td><td>${total?Math.round(amt/total*100):0}%</td></tr>`).join('');
 
   document.getElementById('printArea').innerHTML = `
     <h1>CurRoute — Expense Statement</h1>
@@ -2173,7 +2189,7 @@ document.getElementById('printStatement').addEventListener('click', ()=>{
       <thead><tr><th>Date</th><th>Category</th><th>Note</th><th>Paid via</th><th>Amount</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="p-total">Total: ${settings.currency}${fmt(total)}</div>
+    <div class="p-total">Total: ${money(total)}</div>
     <div class="p-cat-title">By category</div>
     <table><thead><tr><th>Category</th><th>Amount</th><th>Share</th></tr></thead><tbody>${catRows}</tbody></table>
   `;
@@ -2202,8 +2218,8 @@ function renderProfile(){
   const avgActiveDay = activeDays ? totalAll/activeDays : 0;
 
   document.getElementById('lifetimeGrid').innerHTML = `
-    <div class="l-item"><div class="l-val">${settings.currency}${fmt(totalAll)}</div><div class="l-lbl">Total spent</div></div>
-    <div class="l-item"><div class="l-val">${settings.currency}${fmt(totalIncomeAll)}</div><div class="l-lbl">Total income</div></div>
+    <div class="l-item"><div class="l-val">${money(totalAll)}</div><div class="l-lbl">Total spent</div></div>
+    <div class="l-item"><div class="l-val">${money(totalIncomeAll)}</div><div class="l-lbl">Total income</div></div>
     <div class="l-item"><div class="l-val">${entries.length}</div><div class="l-lbl">Entries logged</div></div>
     <div class="l-item"><div class="l-val">${activeDays}</div><div class="l-lbl">Active days</div></div>
   `;
