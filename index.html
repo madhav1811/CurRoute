@@ -473,6 +473,24 @@
   .streak-toast .st-title{ font-family:var(--font-display); font-weight:700; font-size:14px; }
   .streak-toast .st-sub{ font-size:11.5px; color:var(--muted); margin-top:2px; }
 
+  .pref-toast{
+    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 96px);
+    transform:translateX(-50%) translateY(20px);
+    max-width:calc(100% - 36px);
+    background:var(--paper); color:var(--ink-text);
+    border-radius:14px; padding:12px 16px;
+    display:flex; align-items:center; gap:10px;
+    box-shadow:0 18px 36px -14px rgba(0,0,0,0.5);
+    border:1px solid var(--paper-line);
+    z-index:80; opacity:0; pointer-events:none;
+    transition:opacity .3s ease, transform .3s cubic-bezier(.22,1,.36,1);
+  }
+  .pref-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .pref-toast.success{ border-color:rgba(47,82,51,0.35); }
+  .pref-toast.error{ border-color:rgba(156,59,59,0.4); }
+  .pref-toast .pt-icon{ font-size:17px; flex:0 0 auto; }
+  .pref-toast .pt-text{ font-size:13px; font-weight:600; }
+
   /* ---------- Streak celebration popup ---------- */
   .streak-popup-backdrop{
     position:fixed; inset:0; z-index:70; background:rgba(10,13,15,0.55); backdrop-filter:blur(3px);
@@ -1111,6 +1129,12 @@
     <div class="st-title">Streak Complete!</div>
     <div class="st-sub" id="streakToastSub">You've logged today's expenses. Keep the streak alive!</div>
   </div>
+</div>
+
+<!-- Preferences save / validation toast -->
+<div class="pref-toast" id="prefToast">
+  <div class="pt-icon" id="prefToastIcon">✅</div>
+  <div class="pt-text" id="prefToastText">Preferences saved</div>
 </div>
 
 <!-- Print-only statement -->
@@ -2532,12 +2556,34 @@ document.getElementById('avatarFileInput').addEventListener('change', (e)=>{
   e.target.value = '';
 });
 
+function showPrefToast(message, type){
+  const toast = document.getElementById('prefToast');
+  document.getElementById('prefToastIcon').textContent = type === 'error' ? '⚠️' : '✅';
+  document.getElementById('prefToastText').textContent = message;
+  toast.classList.remove('success', 'error');
+  toast.classList.add(type === 'error' ? 'error' : 'success', 'show');
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(()=> toast.classList.remove('show'), 3200);
+}
+
 document.getElementById('saveSettingsBtn').addEventListener('click', async ()=>{
   const code = document.getElementById('currencyInput').value || 'INR';
-  const budgetVal = document.getElementById('budgetInput').value;
+  const budgetInput = document.getElementById('budgetInput');
+  const budgetRaw = budgetInput.value.trim();
+
+  let budgetValue = null;
+  if(budgetRaw){
+    budgetValue = parseFloat(budgetRaw);
+    if(!Number.isFinite(budgetValue) || budgetValue <= 0){
+      showPrefToast('Enter a valid budget amount, or leave it blank to hide the meter.', 'error');
+      budgetInput.focus();
+      return;
+    }
+  }
+
   settings.currencyCode = code;
   settings.currency = currencyByCode(code).symbol;
-  settings.budget = budgetVal ? parseFloat(budgetVal) : null;
+  settings.budget = budgetValue;
   settings.reminderTime = document.getElementById('reminderTimeInput').value || '';
   settings.lastReminderShown = null;
   saveSettings(settings);
@@ -2545,6 +2591,7 @@ document.getElementById('saveSettingsBtn').addEventListener('click', async ()=>{
     scheduleDailyReminder();
   }
   renderAll();
+  showPrefToast(budgetValue !== null ? 'Monthly budget saved successfully.' : 'Preferences saved.', 'success');
 });
 
 document.getElementById('exportAllBtn').addEventListener('click', ()=> csvFor(entries, `curroute-all-${todayISO()}.csv`));
