@@ -242,6 +242,7 @@
     background:rgba(128,128,128,0.08); color:var(--fg); font-size:18px; cursor:pointer;
     display:flex; align-items:center; justify-content:center;
   }
+  .back-btn svg{ stroke:var(--fg); flex:0 0 auto; }
   .page-title{ font-family:var(--font-display); font-weight:600; font-size:16px; color:var(--fg); }
   .page-title .p-sub2{ display:block; font-family:var(--font-body); font-weight:500; font-size:10.5px; letter-spacing:0.5px; text-transform:uppercase; color:var(--sub-color); margin-top:1px; text-align:center; }
   .page-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:4px 18px 40px; }
@@ -557,7 +558,8 @@
     font-size:10px; cursor:pointer; padding:6px 0;
   }
   .tab-btn.active{ color:var(--gold); }
-  .tab-btn svg{ width:22px; height:22px; }
+  .tab-btn svg{ width:22px; height:22px; stroke:#8A8F92; }
+  .tab-btn.active svg{ stroke:var(--gold); }
   .fab-btn{
     flex:0 0 auto; width:54px; height:54px; border-radius:50%; margin:-22px 6px 0;
     background:linear-gradient(160deg, var(--rust), var(--rust-deep));
