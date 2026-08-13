@@ -411,6 +411,26 @@
   .streak-count small{ font-family:var(--font-body); font-weight:600; font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; }
   .streak-sub{ font-size:11px; color:var(--muted); margin-top:2px; }
 
+  /* ---------- Financial snapshot ---------- */
+  .wealth-total-row{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .wealth-total{ font-family:var(--font-mono); font-weight:700; font-size:26px; color:var(--ink-text); }
+  .wealth-delta{ font-family:var(--font-mono); font-size:12px; font-weight:600; color:var(--muted); }
+  .wealth-delta.pos{ color:var(--forest); }
+  .wealth-delta.neg{ color:var(--rust-deep); }
+  .wealth-mini-groups{ margin-top:14px; display:flex; flex-direction:column; gap:10px; }
+  .wealth-group-row .wg-label{ display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); margin-bottom:5px; }
+  .wealth-group-row .wg-label b{ font-family:var(--font-mono); color:var(--ink-text); font-weight:600; }
+  .alloc-list{ display:flex; flex-direction:column; gap:12px; }
+  .alloc-row .ar-label{ display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-text); margin-bottom:6px; }
+  .alloc-row .ar-label span:first-child{ font-weight:600; }
+  .alloc-row .ar-label b{ font-family:var(--font-mono); color:var(--muted); font-weight:600; }
+  .alloc-empty{ font-size:12.5px; color:var(--muted); text-align:center; padding:20px 0; }
+  .wealth-edit-btn{
+    width:100%; padding:14px; border-radius:14px; border:1.5px dashed var(--paper-line);
+    background:transparent; color:var(--muted); font-family:var(--font-body); font-size:13.5px;
+    font-weight:600; cursor:pointer; margin-top:20px;
+  }
+
   /* ---------- Savings goals ---------- */
   .goals-teaser-row{ display:flex; align-items:center; gap:12px; cursor:pointer; }
   .goals-teaser-emoji{ font-size:26px; line-height:1; }
@@ -818,6 +838,15 @@
           <div class="avatar-picker" id="avatarPicker"></div>
           <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
 
+          <div class="profile-card" id="wealthTeaserCard" role="button" aria-label="View financial snapshot">
+            <div class="p-title">Financial Snapshot</div>
+            <div class="wealth-total-row">
+              <div class="wealth-total" id="wealthTotalAmt">₹0</div>
+              <div class="wealth-delta" id="wealthDeltaBadge"></div>
+            </div>
+            <div class="wealth-mini-groups" id="wealthMiniGroups"></div>
+          </div>
+
           <div class="profile-card">
             <div class="p-title">Lifetime</div>
             <div class="streak-banner" id="streakBanner">
@@ -1013,6 +1042,18 @@
   </div>
 </div>
 
+<!-- Financial snapshot drill-down -->
+<div class="page-overlay" id="wealthOverlay">
+  <div class="page-overlay-inner">
+    <div class="page-header">
+      <button class="back-btn" id="wealthOverlayBack">‹</button>
+      <div class="page-title">Financial Snapshot</div>
+      <div class="page-header-actions"></div>
+    </div>
+    <div class="page-scroll" id="wealthOverlayContent"></div>
+  </div>
+</div>
+
 <!-- Savings goals drill-down -->
 <div class="page-overlay" id="goalsOverlay">
   <div class="page-overlay-inner">
@@ -1158,6 +1199,19 @@
     <div class="sheet-actions">
       <button class="btn btn-ghost" id="cancelExpenseBtn">Cancel</button>
       <button class="btn btn-primary" id="saveExpenseBtn">Save entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit assets sheet -->
+<div class="sheet-backdrop" id="assetsBackdrop">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2>Update Your Assets</h2>
+    <div id="assetsFieldList"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="cancelAssetsBtn">Cancel</button>
+      <button class="btn btn-primary" id="saveAssetsBtn">Save</button>
     </div>
   </div>
 </div>
@@ -1452,6 +1506,166 @@ function applyTheme(theme){
   else document.documentElement.removeAttribute('data-theme');
 }
 
+/* ---------------- Financial snapshot ---------------- */
+const ASSETS_KEY = 'curroute_assets_v1';
+const WEALTH_HISTORY_KEY = 'curroute_wealth_history_v1';
+const ASSET_CATEGORIES = [
+  {id:'savings', emoji:'💰', label:'Savings', group:'savings'},
+  {id:'mutualFunds', emoji:'📈', label:'Mutual Funds', group:'investments'},
+  {id:'stocks', emoji:'📊', label:'Stocks', group:'investments'},
+  {id:'fd', emoji:'🏦', label:'Fixed Deposit', group:'investments'},
+  {id:'gold', emoji:'🪙', label:'Gold', group:'investments'},
+  {id:'other', emoji:'📦', label:'Other', group:'investments'},
+];
+
+function loadAssets(){
+  const blank = {savings:0, mutualFunds:0, stocks:0, fd:0, gold:0, other:0};
+  try{ return Object.assign(blank, JSON.parse(localStorage.getItem(ASSETS_KEY)) || {}); }catch(e){ return blank; }
+}
+function saveAssets(a){ localStorage.setItem(ASSETS_KEY, JSON.stringify(a)); }
+
+function loadWealthHistory(){ try{ return JSON.parse(localStorage.getItem(WEALTH_HISTORY_KEY)) || []; }catch(e){ return []; } }
+function saveWealthHistory(h){ localStorage.setItem(WEALTH_HISTORY_KEY, JSON.stringify(h)); }
+
+function wealthTotal(a){ return ASSET_CATEGORIES.reduce((s,c) => s + Number(a[c.id] || 0), 0); }
+
+function recordWealthSnapshot(total){
+  let hist = loadWealthHistory();
+  const today = todayISO();
+  const idx = hist.findIndex(h => h.date === today);
+  if(idx >= 0) hist[idx].total = total; else hist.push({date: today, total});
+  hist.sort((a,b) => a.date.localeCompare(b.date));
+  if(hist.length > 400) hist = hist.slice(-400);
+  saveWealthHistory(hist);
+}
+
+function computeWealthChange(currentTotal){
+  const hist = loadWealthHistory();
+  if(hist.length === 0) return null;
+  const yearStart = new Date().getFullYear() + '-01-01';
+  const before = hist.filter(h => h.date < yearStart);
+  if(before.length){
+    return {delta: currentTotal - before[before.length - 1].total, label: 'this year'};
+  }
+  if(hist[0].date === todayISO() && hist.length === 1) return null;
+  return {delta: currentTotal - hist[0].total, label: 'since you started tracking'};
+}
+
+function renderWealthTeaser(){
+  const total = wealthTotal(assets);
+  document.getElementById('wealthTotalAmt').innerHTML = money(total);
+
+  const change = computeWealthChange(total);
+  const badge = document.getElementById('wealthDeltaBadge');
+  if(!change || total === 0){
+    badge.textContent = '';
+    badge.className = 'wealth-delta';
+  } else {
+    const sign = change.delta >= 0 ? '+' : '';
+    badge.innerHTML = `${sign}${money(change.delta)} ${change.label}`;
+    badge.className = 'wealth-delta ' + (change.delta >= 0 ? 'pos' : 'neg');
+  }
+
+  const savingsTotal = Number(assets.savings || 0);
+  const investTotal = total - savingsTotal;
+  const groups = document.getElementById('wealthMiniGroups');
+  if(total === 0){
+    groups.innerHTML = `<div class="alloc-empty">Tap to add your savings &amp; investments</div>`;
+    return;
+  }
+  groups.innerHTML = [
+    {label: 'Savings', val: savingsTotal},
+    {label: 'Investments', val: investTotal},
+  ].map(g => `
+    <div class="wealth-group-row">
+      <div class="wg-label"><span>${g.label}</span><b>${money(g.val)}</b></div>
+      <div class="meter"><div class="meter-fill" style="width:${total>0 ? Math.round(g.val/total*100) : 0}%"></div></div>
+    </div>`).join('');
+}
+
+function renderWealthOverlay(){
+  const total = wealthTotal(assets);
+  const savingsTotal = Number(assets.savings || 0);
+  const investTotal = total - savingsTotal;
+  const change = computeWealthChange(total);
+
+  const groupsHtml = total === 0 ? '' : [
+    {label: 'Savings', val: savingsTotal},
+    {label: 'Investments', val: investTotal},
+  ].map(g => `
+    <div class="wealth-group-row">
+      <div class="wg-label"><span>${g.label}</span><b>${money(g.val)}</b></div>
+      <div class="meter"><div class="meter-fill" style="width:${total>0 ? Math.round(g.val/total*100) : 0}%"></div></div>
+    </div>`).join('');
+
+  const allocRows = ASSET_CATEGORIES
+    .map(c => ({...c, val: Number(assets[c.id] || 0)}))
+    .filter(c => c.val > 0)
+    .sort((a,b) => b.val - a.val)
+    .map(c => `
+      <div class="alloc-row">
+        <div class="ar-label"><span>${c.emoji} ${c.label}</span><b>${total>0 ? Math.round(c.val/total*100) : 0}%</b></div>
+        <div class="meter"><div class="meter-fill" style="width:${total>0 ? Math.round(c.val/total*100) : 0}%"></div></div>
+      </div>`).join('');
+
+  document.getElementById('wealthOverlayContent').innerHTML = `
+    <div class="profile-card">
+      <div class="p-title">Total Wealth</div>
+      <div class="wealth-total-row">
+        <div class="wealth-total">${money(total)}</div>
+        ${change ? `<div class="wealth-delta ${change.delta>=0?'pos':'neg'}">${change.delta>=0?'+':''}${money(change.delta)} ${change.label}</div>` : ''}
+      </div>
+    </div>
+    <div class="profile-card">
+      <div class="p-title">Where Your Money Is</div>
+      ${total === 0 ? `<div class="alloc-empty">No assets added yet</div>` : `<div class="wealth-mini-groups">${groupsHtml}</div>`}
+    </div>
+    <div class="profile-card">
+      <div class="p-title">Asset Allocation</div>
+      ${allocRows ? `<div class="alloc-list">${allocRows}</div>` : `<div class="alloc-empty">No assets added yet</div>`}
+      <button class="wealth-edit-btn" id="editAssetsBtn">✎ Update assets</button>
+    </div>
+  `;
+  document.getElementById('editAssetsBtn').addEventListener('click', openAssetsSheet);
+}
+
+function openWealthOverlay(){
+  renderWealthOverlay();
+  document.getElementById('wealthOverlay').classList.add('show');
+}
+function closeWealthOverlay(){
+  document.getElementById('wealthOverlay').classList.remove('show');
+}
+document.getElementById('wealthTeaserCard').addEventListener('click', openWealthOverlay);
+document.getElementById('wealthOverlayBack').addEventListener('click', closeWealthOverlay);
+
+function openAssetsSheet(){
+  document.getElementById('assetsFieldList').innerHTML = ASSET_CATEGORIES.map(c => `
+    <div class="field">
+      <label>${c.emoji} ${c.label}</label>
+      <div class="amount-input-wrap">
+        <span class="cur">${settings.currency}</span>
+        <input type="number" inputmode="decimal" step="0.01" placeholder="0" data-asset="${c.id}" value="${assets[c.id] ? assets[c.id] : ''}">
+      </div>
+    </div>`).join('');
+  document.getElementById('assetsBackdrop').classList.add('show');
+}
+function closeAssetsSheet(){
+  document.getElementById('assetsBackdrop').classList.remove('show');
+}
+document.getElementById('cancelAssetsBtn').addEventListener('click', closeAssetsSheet);
+document.getElementById('assetsBackdrop').addEventListener('click', (e) => { if(e.target.id === 'assetsBackdrop') closeAssetsSheet(); });
+document.getElementById('saveAssetsBtn').addEventListener('click', () => {
+  document.querySelectorAll('#assetsFieldList input[data-asset]').forEach(input => {
+    assets[input.dataset.asset] = Math.max(0, Number(input.value) || 0);
+  });
+  saveAssets(assets);
+  recordWealthSnapshot(wealthTotal(assets));
+  closeAssetsSheet();
+  renderWealthOverlay();
+  renderWealthTeaser();
+});
+
 /* ---------------- Savings goals ---------------- */
 const GOALS_KEY = 'curroute_goals_v1';
 const EMERGENCY_GOAL_ID = 'emergency-fund';
@@ -1483,6 +1697,7 @@ let lock = loadLock();
 let enteredPin = '';
 let goals = ensureEmergencyGoal(loadGoals());
 saveGoals(goals);
+let assets = loadAssets();
 let editingGoalId = null;
 let selectedGoalEmoji = GOAL_EMOJIS[0];
 
@@ -2387,6 +2602,7 @@ function renderProfile(){
     : 'Log something today to keep it going';
 
   renderGoalsTeaser();
+  renderWealthTeaser();
 }
 
 /* ---------------- Savings goals rendering ---------------- */
