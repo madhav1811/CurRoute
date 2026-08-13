@@ -1946,11 +1946,11 @@ function moneyValue(n){
 function money(n){
   return `<span class="cur-sym">${settings.currency}</span>${moneyValue(n)}`;
 }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+function isoOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function todayISO(){ return isoOf(new Date()); }
 function monthKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 function catInfo(id){ const list = allCategories().concat(INCOME_CATEGORIES); return list.find(c=>c.id===id) || list[list.length-1]; }
 function toDate(iso){ return new Date(iso+'T12:00:00'); }
-function isoOf(d){ return d.toISOString().slice(0,10); }
 
 function updateAvatarDisplay(){
   [document.getElementById('profileBtn'), document.getElementById('avatarBtn')].forEach(el=>{
@@ -2671,7 +2671,7 @@ document.getElementById('importFileInput').addEventListener('change', async (e)=
     }
     candidates.forEach(c=>{
       c.category = autoCategorize(c.note, c.type);
-      c.isDupe = entries.some(ex => ex.date===c.date && Math.abs(Number(ex.amount)-c.amount)<0.01 && (ex.type||'expense')===c.type);
+      c.isDupe = entries.some(ex => ex.date===c.date && Math.abs(Number(ex.amount)-c.amount)<0.01 && (ex.type||'expense')===c.type && (ex.note||'').trim().toLowerCase() === (c.note||'').trim().toLowerCase());
       c.selected = !c.isDupe;
     });
     importCandidates = candidates;
@@ -2832,7 +2832,7 @@ function renderProfile(){
 function goalPct(g){ return g.target > 0 ? Math.min(100, Math.round((g.current/g.target)*100)) : 0; }
 
 function renderGoalsTeaser(){
-  const funded = goals.filter(g => g.target > 0);
+  const funded = goals.filter(g => g.id !== EMERGENCY_GOAL_ID && g.target > 0);
   const title = document.getElementById('goalsTeaserTitle');
   const sub = document.getElementById('goalsTeaserSub');
   const fill = document.getElementById('goalsTeaserMeterFill');
@@ -2961,6 +2961,8 @@ document.getElementById('saveGoalBtn').addEventListener('click', ()=>{
   closeGoalSheet();
   renderGoalsOverlay();
   renderGoalsTeaser();
+  renderHealthTeaser();
+  if(document.getElementById('healthOverlay').classList.contains('show')) renderHealthOverlay();
 });
 
 document.getElementById('deleteGoalBtn').addEventListener('click', ()=>{
@@ -2970,6 +2972,8 @@ document.getElementById('deleteGoalBtn').addEventListener('click', ()=>{
   closeGoalSheet();
   renderGoalsOverlay();
   renderGoalsTeaser();
+  renderHealthTeaser();
+  if(document.getElementById('healthOverlay').classList.contains('show')) renderHealthOverlay();
 });
 
 /* ---------------- Streak ---------------- */
@@ -3312,6 +3316,8 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
   if(confirm('This deletes every entry permanently. Continue?')){
     entries = [];
     saveEntries(entries);
+    viewDate = new Date();
+    analysisDate = new Date();
     renderAll();
   }
 });
@@ -3515,6 +3521,7 @@ document.getElementById('saveExpenseBtn').addEventListener('click', ()=>{
   closeExpenseSheet();
   viewDate = toDate(date);
   renderAll();
+  if(document.getElementById('monthViewOverlay').classList.contains('show')) renderMonthView();
   if(wasNew) maybeShowStreakToast(date);
 });
 
