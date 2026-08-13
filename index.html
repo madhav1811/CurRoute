@@ -448,6 +448,13 @@
     font-weight:600; cursor:pointer; margin-top:20px;
   }
 
+  /* ---------- Money planner ---------- */
+  .planner-available{ font-family:var(--font-mono); font-weight:700; font-size:24px; color:var(--forest); margin:14px 0 16px; }
+  .planner-available span{ font-family:var(--font-body); font-size:12px; font-weight:600; color:var(--muted); }
+  .planner-available.negative{ color:var(--rust-deep); }
+  .planner-warning{ font-size:12.5px; color:var(--rust-deep); background:#F7E2DD; padding:10px 12px; border-radius:10px; margin:14px 0; }
+  .planner-disclaimer{ font-size:11px; color:var(--muted); margin-top:14px; line-height:1.5; }
+
   /* ---------- Savings goals ---------- */
   .goals-teaser-row{ display:flex; align-items:center; gap:12px; cursor:pointer; }
   .goals-teaser-emoji{ font-size:26px; line-height:1; }
@@ -898,6 +905,18 @@
             </div>
             <div class="goals-teaser-meter meter"><div class="meter-fill" id="goalsTeaserMeterFill" style="width:0%"></div></div>
           </div>
+
+          <div class="profile-card" id="plannerTeaserCard" role="button" aria-label="Open money planner">
+            <div class="p-title">Money Planner</div>
+            <div class="goals-teaser-row">
+              <div class="goals-teaser-emoji">🧭</div>
+              <div class="goals-teaser-text">
+                <div class="goals-teaser-title" id="plannerTeaserTitle">Where should my money go?</div>
+                <div class="goals-teaser-sub" id="plannerTeaserSub">Enter income &amp; expenses to get a suggested split</div>
+              </div>
+              <div class="goals-teaser-chevron">›</div>
+            </div>
+          </div>
         </div>
 
         <!-- ---- Settings sub-section ---- -->
@@ -1251,6 +1270,33 @@
     <div class="sheet-actions">
       <button class="btn btn-ghost" id="cancelAssetsBtn">Cancel</button>
       <button class="btn btn-primary" id="saveAssetsBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Money planner sheet -->
+<div class="sheet-backdrop" id="plannerBackdrop">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2>Where Should My Money Go?</h2>
+    <div class="field">
+      <label>Monthly income</label>
+      <div class="amount-input-wrap">
+        <span class="cur" id="plannerCurSym1">₹</span>
+        <input type="number" inputmode="decimal" id="plannerIncomeInput" placeholder="0" step="0.01">
+      </div>
+    </div>
+    <div class="field">
+      <label>Monthly expenses</label>
+      <div class="amount-input-wrap">
+        <span class="cur" id="plannerCurSym2">₹</span>
+        <input type="number" inputmode="decimal" id="plannerExpenseInput" placeholder="0" step="0.01">
+      </div>
+    </div>
+    <div id="plannerResult"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="cancelPlannerBtn">Close</button>
+      <button class="btn btn-primary" id="savePlannerBtn">Save</button>
     </div>
   </div>
 </div>
@@ -1888,6 +1934,112 @@ function closeHealthOverlay(){
 document.getElementById('healthScoreCard').addEventListener('click', openHealthOverlay);
 document.getElementById('healthOverlayBack').addEventListener('click', closeHealthOverlay);
 
+/* ---------------- Money planner ---------------- */
+const PLANNER_KEY = 'curroute_planner_v1';
+
+function loadPlanner(){
+  const blank = {income:0, expenses:0};
+  try{ return Object.assign(blank, JSON.parse(localStorage.getItem(PLANNER_KEY)) || {}); }catch(e){ return blank; }
+}
+function savePlanner(p){ localStorage.setItem(PLANNER_KEY, JSON.stringify(p)); }
+
+function computeAllocation(income, expenses){
+  const available = Math.max(0, income - expenses);
+  const savings = Math.round(available*0.30);
+  const investments = Math.round(available*0.50);
+  const goalsAmt = Math.max(0, available - savings - investments);
+  return {available, savings, investments, goals: goalsAmt};
+}
+
+function computeAvgMonthlyIncomeExpense(monthsBack){
+  const now = new Date();
+  const keys = new Set();
+  for(let i = 0; i < monthsBack; i++) keys.add(monthKey(new Date(now.getFullYear(), now.getMonth()-i, 1)));
+  const monthsWithData = new Set();
+  let income = 0, expense = 0;
+  entries.forEach(e => {
+    const mk = e.date.slice(0,7);
+    if(!keys.has(mk)) return;
+    monthsWithData.add(mk);
+    if(e.type === 'income') income += Number(e.amount); else expense += Number(e.amount);
+  });
+  const n = monthsWithData.size || 1;
+  return {avgIncome: income/n, avgExpense: expense/n, hasData: monthsWithData.size > 0};
+}
+
+function renderPlannerTeaser(){
+  const title = document.getElementById('plannerTeaserTitle');
+  const sub = document.getElementById('plannerTeaserSub');
+  if(!planner.income && !planner.expenses){
+    title.textContent = 'Where should my money go?';
+    sub.textContent = 'Enter income & expenses to get a suggested split';
+    return;
+  }
+  const {available, savings, investments, goals} = computeAllocation(planner.income, planner.expenses);
+  if(available <= 0){
+    title.textContent = 'Expenses cover your income';
+    sub.textContent = 'Nothing left to allocate this month';
+    return;
+  }
+  title.innerHTML = `${money(available)} available/month`;
+  sub.innerHTML = `${money(savings)} savings · ${money(investments)} invest · ${money(goals)} goals`;
+}
+
+function renderPlannerResult(){
+  const income = Math.max(0, Number(document.getElementById('plannerIncomeInput').value) || 0);
+  const expenses = Math.max(0, Number(document.getElementById('plannerExpenseInput').value) || 0);
+  const resultEl = document.getElementById('plannerResult');
+
+  if(income <= 0){
+    resultEl.innerHTML = `<div class="planner-disclaimer">Enter your monthly income to see a suggested split.</div>`;
+    return;
+  }
+  if(expenses >= income){
+    resultEl.innerHTML = `<div class="planner-warning">Your expenses meet or exceed your income — there's nothing left to allocate. Consider reviewing your budget first.</div>`;
+    return;
+  }
+  const {available, savings, investments, goals} = computeAllocation(income, expenses);
+  resultEl.innerHTML = `
+    <div class="planner-available">${money(available)} <span>available / month</span></div>
+    <div class="alloc-list">
+      <div class="alloc-row"><div class="ar-label"><span>🏦 Savings</span><b>${money(savings)}</b></div><div class="meter"><div class="meter-fill" style="width:30%"></div></div></div>
+      <div class="alloc-row"><div class="ar-label"><span>📈 Investments</span><b>${money(investments)}</b></div><div class="meter"><div class="meter-fill" style="width:50%"></div></div></div>
+      <div class="alloc-row"><div class="ar-label"><span>🎯 Goals</span><b>${money(goals)}</b></div><div class="meter"><div class="meter-fill" style="width:20%"></div></div></div>
+    </div>
+    <div class="planner-disclaimer">General guidance based on a simple 30/50/20 split of what's left after expenses — not personalized financial advice.</div>
+  `;
+}
+
+function openPlannerSheet(){
+  document.getElementById('plannerCurSym1').textContent = settings.currency;
+  document.getElementById('plannerCurSym2').textContent = settings.currency;
+  let income = planner.income, expenses = planner.expenses;
+  if(!income && !expenses){
+    const avg = computeAvgMonthlyIncomeExpense(3);
+    if(avg.hasData){ income = Math.round(avg.avgIncome); expenses = Math.round(avg.avgExpense); }
+  }
+  document.getElementById('plannerIncomeInput').value = income || '';
+  document.getElementById('plannerExpenseInput').value = expenses || '';
+  renderPlannerResult();
+  document.getElementById('plannerBackdrop').classList.add('show');
+}
+function closePlannerSheet(){
+  document.getElementById('plannerBackdrop').classList.remove('show');
+}
+document.getElementById('plannerTeaserCard').addEventListener('click', openPlannerSheet);
+document.getElementById('cancelPlannerBtn').addEventListener('click', closePlannerSheet);
+document.getElementById('plannerBackdrop').addEventListener('click', (e) => { if(e.target.id === 'plannerBackdrop') closePlannerSheet(); });
+document.getElementById('plannerIncomeInput').addEventListener('input', renderPlannerResult);
+document.getElementById('plannerExpenseInput').addEventListener('input', renderPlannerResult);
+document.getElementById('savePlannerBtn').addEventListener('click', () => {
+  const income = Math.max(0, Number(document.getElementById('plannerIncomeInput').value) || 0);
+  const expenses = Math.max(0, Number(document.getElementById('plannerExpenseInput').value) || 0);
+  planner = {income, expenses};
+  savePlanner(planner);
+  closePlannerSheet();
+  renderPlannerTeaser();
+});
+
 /* ---------------- Savings goals ---------------- */
 const GOALS_KEY = 'curroute_goals_v1';
 const EMERGENCY_GOAL_ID = 'emergency-fund';
@@ -1920,6 +2072,7 @@ let enteredPin = '';
 let goals = ensureEmergencyGoal(loadGoals());
 saveGoals(goals);
 let assets = loadAssets();
+let planner = loadPlanner();
 let editingGoalId = null;
 let selectedGoalEmoji = GOAL_EMOJIS[0];
 
@@ -2826,6 +2979,7 @@ function renderProfile(){
   renderGoalsTeaser();
   renderWealthTeaser();
   renderHealthTeaser();
+  renderPlannerTeaser();
 }
 
 /* ---------------- Savings goals rendering ---------------- */
