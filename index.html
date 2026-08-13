@@ -411,6 +411,39 @@
   .streak-count small{ font-family:var(--font-body); font-weight:600; font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; }
   .streak-sub{ font-size:11px; color:var(--muted); margin-top:2px; }
 
+  /* ---------- Savings goals ---------- */
+  .goals-teaser-row{ display:flex; align-items:center; gap:12px; cursor:pointer; }
+  .goals-teaser-emoji{ font-size:26px; line-height:1; }
+  .goals-teaser-text{ flex:1; min-width:0; }
+  .goals-teaser-title{ font-size:14px; font-weight:600; }
+  .goals-teaser-sub{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .goals-teaser-chevron{ color:var(--muted); font-size:18px; }
+  .goals-teaser-meter{ margin-top:12px; }
+
+  .goal-card{ background:var(--paper); border-radius:16px; padding:15px 16px; margin-bottom:12px; cursor:pointer; }
+  .goal-card.emergency{ border:1px solid #F0D8B8; background:linear-gradient(135deg, #FBEAD4, #FBEDEC); }
+  .goal-head{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .goal-emoji{ font-size:22px; line-height:1; }
+  .goal-name{ font-size:14px; font-weight:600; color:var(--ink-text); flex:1; min-width:0; }
+  .goal-pct{ font-family:var(--font-mono); font-size:12.5px; font-weight:700; color:var(--forest); }
+  .goal-pct.over{ color:var(--rust-deep); }
+  .goal-amounts{ display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:8px; }
+  .goal-amounts b{ font-family:var(--font-mono); color:var(--ink-text); font-weight:600; }
+  .goal-date{ font-size:11px; color:var(--muted); margin-top:6px; }
+  .goal-recommend{ font-size:11px; color:var(--muted); margin-top:6px; }
+
+  .add-goal-btn{
+    width:100%; padding:14px; border-radius:14px; border:1.5px dashed var(--paper-line);
+    background:transparent; color:var(--muted); font-family:var(--font-body); font-size:13.5px;
+    font-weight:600; cursor:pointer; margin-bottom:20px;
+  }
+  .emoji-grid{ display:grid; grid-template-columns:repeat(6, 1fr); gap:8px; }
+  .emoji-grid button{
+    padding:8px 0; border-radius:10px; border:1.5px solid var(--paper-line); background:#fff;
+    font-size:18px; cursor:pointer;
+  }
+  .emoji-grid button.active{ border-color:var(--rust); background:#FBEDEC; }
+
   /* ---------- Currency converter ---------- */
   .converter-row{ display:grid; grid-template-columns:1fr 1fr auto 1fr; gap:6px; align-items:center; }
   .converter-row input{ width:100%; min-width:0; }
@@ -796,6 +829,19 @@
             </div>
             <div class="lifetime-grid" id="lifetimeGrid"></div>
           </div>
+
+          <div class="profile-card" id="goalsTeaserCard" role="button" aria-label="View savings goals">
+            <div class="p-title">Savings Goals</div>
+            <div class="goals-teaser-row">
+              <div class="goals-teaser-emoji">🎯</div>
+              <div class="goals-teaser-text">
+                <div class="goals-teaser-title" id="goalsTeaserTitle">No goals yet</div>
+                <div class="goals-teaser-sub" id="goalsTeaserSub">Tap to start saving toward something</div>
+              </div>
+              <div class="goals-teaser-chevron">›</div>
+            </div>
+            <div class="goals-teaser-meter meter"><div class="meter-fill" id="goalsTeaserMeterFill" style="width:0%"></div></div>
+          </div>
         </div>
 
         <!-- ---- Settings sub-section ---- -->
@@ -967,6 +1013,18 @@
   </div>
 </div>
 
+<!-- Savings goals drill-down -->
+<div class="page-overlay" id="goalsOverlay">
+  <div class="page-overlay-inner">
+    <div class="page-header">
+      <button class="back-btn" id="goalsOverlayBack">‹</button>
+      <div class="page-title">Savings Goals</div>
+      <div class="page-header-actions"></div>
+    </div>
+    <div class="page-scroll" id="goalsOverlayList"></div>
+  </div>
+</div>
+
 <!-- Import sheet -->
 <div class="sheet-backdrop" id="importBackdrop">
   <div class="sheet">
@@ -1100,6 +1158,48 @@
     <div class="sheet-actions">
       <button class="btn btn-ghost" id="cancelExpenseBtn">Cancel</button>
       <button class="btn btn-primary" id="saveExpenseBtn">Save entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- Goal add/edit sheet -->
+<div class="sheet-backdrop" id="goalBackdrop">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2 id="goalSheetTitle">New Goal</h2>
+    <div class="field" id="goalEmojiField">
+      <label>Icon</label>
+      <div class="emoji-grid" id="goalEmojiGrid"></div>
+    </div>
+    <div class="field" id="goalNameField">
+      <label>Goal name</label>
+      <input type="text" class="full" id="goalNameInput" placeholder="e.g. MacBook Fund">
+    </div>
+    <div class="field" id="goalRecommendField" style="display:none;">
+      <div class="goal-recommend" id="goalRecommendText"></div>
+    </div>
+    <div class="field">
+      <label>Target amount</label>
+      <div class="amount-input-wrap">
+        <span class="cur" id="goalCurSym1">₹</span>
+        <input type="number" inputmode="decimal" id="goalTargetInput" placeholder="0" step="0.01">
+      </div>
+    </div>
+    <div class="field">
+      <label>Saved so far</label>
+      <div class="amount-input-wrap">
+        <span class="cur" id="goalCurSym2">₹</span>
+        <input type="number" inputmode="decimal" id="goalCurrentInput" placeholder="0" step="0.01">
+      </div>
+    </div>
+    <div class="field" id="goalDateField">
+      <label>Target date (optional)</label>
+      <input type="month" class="full" id="goalDateInput">
+    </div>
+    <button class="btn btn-danger" id="deleteGoalBtn" style="display:none;">Delete goal</button>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="cancelGoalBtn">Cancel</button>
+      <button class="btn btn-primary" id="saveGoalBtn">Save goal</button>
     </div>
   </div>
 </div>
@@ -1352,12 +1452,39 @@ function applyTheme(theme){
   else document.documentElement.removeAttribute('data-theme');
 }
 
+/* ---------------- Savings goals ---------------- */
+const GOALS_KEY = 'curroute_goals_v1';
+const EMERGENCY_GOAL_ID = 'emergency-fund';
+const GOAL_EMOJIS = ['🎯','🏠','🚗','✈️','🎓','💻','📱','💍','👶','🏖️','🩺','🎉','🐾','🛠️','📚','⌚','🎮','🧳'];
+
+function loadGoals(){ try{ return JSON.parse(localStorage.getItem(GOALS_KEY)) || []; }catch(e){ return []; } }
+function saveGoals(list){ localStorage.setItem(GOALS_KEY, JSON.stringify(list)); }
+
+function ensureEmergencyGoal(list){
+  if(!list.some(g => g.id === EMERGENCY_GOAL_ID)){
+    list = [{id:EMERGENCY_GOAL_ID, emoji:'🏦', name:'Emergency Fund', target:0, current:0, targetDate:null, createdAt: todayISO()}, ...list];
+  }
+  return list;
+}
+
+function computeRecommendedEmergencyFund(){
+  const months = new Set(entries.filter(e => e.type !== 'income').map(e => e.date.slice(0,7)));
+  if(months.size === 0) return 0;
+  const totalExpense = entries.filter(e => e.type !== 'income').reduce((s,e)=>s+Number(e.amount),0);
+  const avgMonthly = totalExpense / months.size;
+  return Math.round(avgMonthly * 6);
+}
+
 let entries = loadEntries();
 let settings = loadSettings();
 if(!settings.memberSince){ settings.memberSince = todayISO(); saveSettings(settings); }
 applyTheme(settings.theme);
 let lock = loadLock();
 let enteredPin = '';
+let goals = ensureEmergencyGoal(loadGoals());
+saveGoals(goals);
+let editingGoalId = null;
+let selectedGoalEmoji = GOAL_EMOJIS[0];
 
 let viewDate = new Date();        // ledger tab month
 let editingId = null;
@@ -2258,7 +2385,153 @@ function renderProfile(){
     streak === 0 ? 'Log an expense today to start one'
     : loggedToday ? "You're on a roll — logged today"
     : 'Log something today to keep it going';
+
+  renderGoalsTeaser();
 }
+
+/* ---------------- Savings goals rendering ---------------- */
+function goalPct(g){ return g.target > 0 ? Math.min(100, Math.round((g.current/g.target)*100)) : 0; }
+
+function renderGoalsTeaser(){
+  const funded = goals.filter(g => g.target > 0);
+  const title = document.getElementById('goalsTeaserTitle');
+  const sub = document.getElementById('goalsTeaserSub');
+  const fill = document.getElementById('goalsTeaserMeterFill');
+  const customCount = goals.filter(g => g.id !== EMERGENCY_GOAL_ID).length;
+
+  if(funded.length === 0){
+    title.textContent = customCount === 0 ? 'No goals yet' : `${customCount} goal${customCount===1?'':'s'} · set a target to track progress`;
+    sub.textContent = 'Tap to start saving toward something';
+    fill.style.width = '0%';
+    return;
+  }
+  const totalTarget = funded.reduce((s,g)=>s+Number(g.target),0);
+  const totalCurrent = funded.reduce((s,g)=>s+Number(g.current),0);
+  const overallPct = totalTarget > 0 ? Math.min(100, Math.round((totalCurrent/totalTarget)*100)) : 0;
+  title.textContent = `${customCount} goal${customCount===1?'':'s'} · ${overallPct}% funded`;
+  sub.innerHTML = `${money(totalCurrent)} saved of ${money(totalTarget)}`;
+  fill.style.width = overallPct + '%';
+}
+
+function buildGoalCardHtml(g){
+  const isEmergency = g.id === EMERGENCY_GOAL_ID;
+  const pct = goalPct(g);
+  const dateLabel = g.targetDate ? new Date(g.targetDate+'-01T12:00:00').toLocaleDateString('en-US', {month:'short', year:'numeric'}) : null;
+  return `
+    <div class="goal-card ${isEmergency?'emergency':''}" data-goal="${g.id}">
+      <div class="goal-head">
+        <div class="goal-emoji">${g.emoji}</div>
+        <div class="goal-name">${g.name}</div>
+        <div class="goal-pct">${g.target>0 ? pct+'%' : '—'}</div>
+      </div>
+      <div class="meter"><div class="meter-fill" style="width:${pct}%"></div></div>
+      <div class="goal-amounts"><span>Saved</span><b>${money(g.current)} / ${money(g.target)}</b></div>
+      ${dateLabel ? `<div class="goal-date">Target: ${dateLabel}</div>` : ''}
+      ${isEmergency ? `<div class="goal-recommend">Recommended: ${money(computeRecommendedEmergencyFund())} (6 months of expenses)</div>` : ''}
+    </div>`;
+}
+
+function renderGoalsOverlay(){
+  const emergency = goals.find(g => g.id === EMERGENCY_GOAL_ID);
+  const custom = goals.filter(g => g.id !== EMERGENCY_GOAL_ID);
+  document.getElementById('goalsOverlayList').innerHTML = `
+    ${buildGoalCardHtml(emergency)}
+    <div class="section-heading" style="margin:20px 4px 12px; color:var(--ink-text);">Your Goals</div>
+    ${custom.map(buildGoalCardHtml).join('')}
+    <button class="add-goal-btn" id="addGoalBtn">＋ New goal</button>
+  `;
+  document.getElementById('goalsOverlayList').querySelectorAll('.goal-card').forEach(card=>{
+    card.addEventListener('click', ()=> openGoalSheet(card.dataset.goal));
+  });
+  document.getElementById('addGoalBtn').addEventListener('click', ()=> openGoalSheet(null));
+}
+
+function openGoalsOverlay(){
+  renderGoalsOverlay();
+  document.getElementById('goalsOverlay').classList.add('show');
+}
+function closeGoalsOverlay(){
+  document.getElementById('goalsOverlay').classList.remove('show');
+}
+document.getElementById('goalsTeaserCard').addEventListener('click', openGoalsOverlay);
+document.getElementById('goalsOverlayBack').addEventListener('click', closeGoalsOverlay);
+
+function renderGoalEmojiGrid(){
+  document.getElementById('goalEmojiGrid').innerHTML = GOAL_EMOJIS.map(e =>
+    `<button type="button" class="${e===selectedGoalEmoji?'active':''}" data-emoji="${e}">${e}</button>`
+  ).join('');
+  document.getElementById('goalEmojiGrid').querySelectorAll('button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      selectedGoalEmoji = btn.dataset.emoji;
+      renderGoalEmojiGrid();
+    });
+  });
+}
+
+function openGoalSheet(goalId){
+  editingGoalId = goalId;
+  const isEmergency = goalId === EMERGENCY_GOAL_ID;
+  const goal = goalId ? goals.find(g => g.id === goalId) : null;
+
+  document.getElementById('goalSheetTitle').textContent = goal ? (isEmergency ? 'Emergency Fund' : 'Edit Goal') : 'New Goal';
+  document.getElementById('goalCurSym1').textContent = settings.currency;
+  document.getElementById('goalCurSym2').textContent = settings.currency;
+  document.getElementById('goalEmojiField').style.display = isEmergency ? 'none' : '';
+  document.getElementById('goalNameField').style.display = isEmergency ? 'none' : '';
+  document.getElementById('goalRecommendField').style.display = isEmergency ? '' : 'none';
+  if(isEmergency){
+    document.getElementById('goalRecommendText').textContent = `Recommended: ${settings.currency}${moneyValue(computeRecommendedEmergencyFund())} — about 6 months of your average expenses.`;
+  }
+  selectedGoalEmoji = goal ? goal.emoji : GOAL_EMOJIS[0];
+  renderGoalEmojiGrid();
+  document.getElementById('goalNameInput').value = goal ? goal.name : '';
+  document.getElementById('goalTargetInput').value = goal && goal.target ? goal.target : '';
+  document.getElementById('goalCurrentInput').value = goal && goal.current ? goal.current : '';
+  document.getElementById('goalDateInput').value = goal && goal.targetDate ? goal.targetDate : '';
+  document.getElementById('deleteGoalBtn').style.display = (goal && !isEmergency) ? '' : 'none';
+
+  document.getElementById('goalBackdrop').classList.add('show');
+}
+function closeGoalSheet(){
+  document.getElementById('goalBackdrop').classList.remove('show');
+  editingGoalId = null;
+}
+document.getElementById('cancelGoalBtn').addEventListener('click', closeGoalSheet);
+document.getElementById('goalBackdrop').addEventListener('click', (e)=>{ if(e.target.id==='goalBackdrop') closeGoalSheet(); });
+
+document.getElementById('saveGoalBtn').addEventListener('click', ()=>{
+  const isEmergency = editingGoalId === EMERGENCY_GOAL_ID;
+  const target = Math.max(0, Number(document.getElementById('goalTargetInput').value) || 0);
+  const current = Math.max(0, Number(document.getElementById('goalCurrentInput').value) || 0);
+  const targetDate = document.getElementById('goalDateInput').value || null;
+
+  if(!isEmergency){
+    const name = document.getElementById('goalNameInput').value.trim();
+    if(!name){ document.getElementById('goalNameInput').focus(); return; }
+    if(editingGoalId){
+      const g = goals.find(g => g.id === editingGoalId);
+      Object.assign(g, {name, emoji:selectedGoalEmoji, target, current, targetDate});
+    } else {
+      goals.push({id:'goal-'+Date.now(), emoji:selectedGoalEmoji, name, target, current, targetDate, createdAt:todayISO()});
+    }
+  } else {
+    const g = goals.find(g => g.id === EMERGENCY_GOAL_ID);
+    Object.assign(g, {target, current, targetDate});
+  }
+  saveGoals(goals);
+  closeGoalSheet();
+  renderGoalsOverlay();
+  renderGoalsTeaser();
+});
+
+document.getElementById('deleteGoalBtn').addEventListener('click', ()=>{
+  if(!editingGoalId || editingGoalId === EMERGENCY_GOAL_ID) return;
+  goals = goals.filter(g => g.id !== editingGoalId);
+  saveGoals(goals);
+  closeGoalSheet();
+  renderGoalsOverlay();
+  renderGoalsTeaser();
+});
 
 /* ---------------- Streak ---------------- */
 function computeStreak(){
