@@ -411,6 +411,23 @@
   .streak-count small{ font-family:var(--font-body); font-weight:600; font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; }
   .streak-sub{ font-size:11px; color:var(--muted); margin-top:2px; }
 
+  /* ---------- Financial health score ---------- */
+  .health-score-row{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .health-score-num{ font-family:var(--font-mono); font-weight:800; font-size:34px; color:var(--ink-text); }
+  .health-score-num small{ font-size:14px; font-weight:600; color:var(--muted); }
+  .health-score-badge{ font-size:12px; font-weight:700; padding:4px 10px; border-radius:20px; white-space:nowrap; }
+  .health-score-badge.excellent{ color:var(--forest); background:#E3EDE1; }
+  .health-score-badge.good{ color:#8A6A1F; background:#F4E8CC; }
+  .health-score-badge.fair{ color:var(--rust-deep); background:#F7E2DD; }
+  .health-score-badge.poor{ color:#fff; background:var(--rust-deep); }
+  .health-score-empty{ font-size:12.5px; color:var(--muted); }
+  .health-factor-row{ margin-bottom:16px; }
+  .health-factor-row .hf-label{ display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-text); margin-bottom:6px; }
+  .health-factor-row .hf-label span:first-child{ font-weight:600; }
+  .health-factor-row .hf-label b{ font-family:var(--font-mono); color:var(--muted); font-weight:600; }
+  .health-factor-row.na{ opacity:0.5; }
+  .health-factor-note{ font-size:11px; color:var(--muted); margin-top:5px; }
+
   /* ---------- Financial snapshot ---------- */
   .wealth-total-row{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
   .wealth-total{ font-family:var(--font-mono); font-weight:700; font-size:26px; color:var(--ink-text); }
@@ -838,6 +855,16 @@
           <div class="avatar-picker" id="avatarPicker"></div>
           <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
 
+          <div class="profile-card" id="healthScoreCard" role="button" aria-label="View financial health score">
+            <div class="p-title">Financial Health</div>
+            <div class="health-score-row">
+              <div class="health-score-num" id="healthScoreNum">—</div>
+              <div class="health-score-badge" id="healthScoreBadge"></div>
+            </div>
+            <div class="meter" id="healthScoreMeterWrap" style="margin-top:12px; display:none;"><div class="meter-fill" id="healthScoreMeterFill" style="width:0%"></div></div>
+            <div class="health-score-empty" id="healthScoreEmpty">Add assets, income entries, or goals to calculate your score</div>
+          </div>
+
           <div class="profile-card" id="wealthTeaserCard" role="button" aria-label="View financial snapshot">
             <div class="p-title">Financial Snapshot</div>
             <div class="wealth-total-row">
@@ -1039,6 +1066,18 @@
     </div>
     <div class="filter-summary" id="filterSummary" hidden></div>
     <div class="page-scroll" id="monthViewList"></div>
+  </div>
+</div>
+
+<!-- Financial health score drill-down -->
+<div class="page-overlay" id="healthOverlay">
+  <div class="page-overlay-inner">
+    <div class="page-header">
+      <button class="back-btn" id="healthOverlayBack">‹</button>
+      <div class="page-title">Financial Health</div>
+      <div class="page-header-actions"></div>
+    </div>
+    <div class="page-scroll" id="healthOverlayContent"></div>
   </div>
 </div>
 
@@ -1519,7 +1558,7 @@ const ASSET_CATEGORIES = [
 ];
 
 function loadAssets(){
-  const blank = {savings:0, mutualFunds:0, stocks:0, fd:0, gold:0, other:0};
+  const blank = {savings:0, mutualFunds:0, stocks:0, fd:0, gold:0, other:0, debt:0};
   try{ return Object.assign(blank, JSON.parse(localStorage.getItem(ASSETS_KEY)) || {}); }catch(e){ return blank; }
 }
 function saveAssets(a){ localStorage.setItem(ASSETS_KEY, JSON.stringify(a)); }
@@ -1640,7 +1679,7 @@ document.getElementById('wealthTeaserCard').addEventListener('click', openWealth
 document.getElementById('wealthOverlayBack').addEventListener('click', closeWealthOverlay);
 
 function openAssetsSheet(){
-  document.getElementById('assetsFieldList').innerHTML = ASSET_CATEGORIES.map(c => `
+  const assetFields = ASSET_CATEGORIES.map(c => `
     <div class="field">
       <label>${c.emoji} ${c.label}</label>
       <div class="amount-input-wrap">
@@ -1648,6 +1687,16 @@ function openAssetsSheet(){
         <input type="number" inputmode="decimal" step="0.01" placeholder="0" data-asset="${c.id}" value="${assets[c.id] ? assets[c.id] : ''}">
       </div>
     </div>`).join('');
+  const debtField = `
+    <div class="section-heading" style="margin:20px 4px 12px; color:var(--ink-text);">Liabilities</div>
+    <div class="field">
+      <label>💳 Total Debt</label>
+      <div class="amount-input-wrap">
+        <span class="cur">${settings.currency}</span>
+        <input type="number" inputmode="decimal" step="0.01" placeholder="0" data-asset="debt" value="${assets.debt ? assets.debt : ''}">
+      </div>
+    </div>`;
+  document.getElementById('assetsFieldList').innerHTML = assetFields + debtField;
   document.getElementById('assetsBackdrop').classList.add('show');
 }
 function closeAssetsSheet(){
@@ -1664,7 +1713,180 @@ document.getElementById('saveAssetsBtn').addEventListener('click', () => {
   closeAssetsSheet();
   renderWealthOverlay();
   renderWealthTeaser();
+  renderHealthTeaser();
+  if(document.getElementById('healthOverlay').classList.contains('show')) renderHealthOverlay();
 });
+
+/* ---------------- Financial health score ---------------- */
+const HEALTH_FACTOR_LABELS = {
+  emergency: 'Emergency Fund',
+  savings: 'Savings Rate',
+  invest: 'Investment Allocation',
+  diversify: 'Diversification',
+  goals: 'Goal Progress',
+  debt: 'Debt',
+};
+const HEALTH_FACTOR_NA_NOTES = {
+  emergency: 'Log a few expenses so we can estimate your target',
+  savings: 'Log some income entries to calculate this',
+  invest: 'Add your assets to calculate this',
+  diversify: 'Add your assets to calculate this',
+  goals: 'Set a target on one of your goals to calculate this',
+};
+const HEALTH_MIN_FACTORS = 2;
+
+function recentIncomeExpense(monthsBack){
+  const now = new Date();
+  const keys = new Set();
+  for(let i = 0; i < monthsBack; i++){
+    keys.add(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
+  }
+  let income = 0, expense = 0;
+  entries.forEach(e => {
+    if(!keys.has(e.date.slice(0,7))) return;
+    if(e.type === 'income') income += Number(e.amount); else expense += Number(e.amount);
+  });
+  return {income, expense};
+}
+
+function computeHealthFactors(){
+  const factors = [];
+
+  const emergencyGoal = goals.find(g => g.id === EMERGENCY_GOAL_ID);
+  const recommended = computeRecommendedEmergencyFund();
+  if(recommended > 0){
+    const ratio = Math.min(1, (emergencyGoal.current || 0) / recommended);
+    factors.push({key:'emergency', weight:20, score: ratio*20, detail:`${Math.round(ratio*100)}% of recommended ${money(recommended)}`});
+  }
+
+  const {income, expense} = recentIncomeExpense(3);
+  if(income > 0){
+    const rate = (income - expense) / income;
+    const norm = Math.max(0, Math.min(1, rate/0.25));
+    factors.push({key:'savings', weight:20, score: norm*20, detail:`${Math.round(rate*100)}% saved, last 3 months`});
+  }
+
+  const totalAssets = wealthTotal(assets);
+  if(totalAssets > 0){
+    const investTotal = totalAssets - Number(assets.savings || 0);
+    const investShare = investTotal / totalAssets;
+    const ratio = Math.max(0, Math.min(1, investShare/0.4));
+    factors.push({key:'invest', weight:15, score: ratio*15, detail:`${Math.round(investShare*100)}% of assets invested`});
+
+    const shares = ASSET_CATEGORIES.map(c => Number(assets[c.id] || 0)/totalAssets).filter(s => s > 0);
+    const hhi = shares.reduce((s,x) => s + x*x, 0);
+    const minHhi = 1/ASSET_CATEGORIES.length;
+    const divRatio = Math.max(0, Math.min(1, (1-hhi)/(1-minHhi)));
+    factors.push({key:'diversify', weight:15, score: divRatio*15, detail:`${shares.length} asset type${shares.length===1?'':'s'} in use`});
+  }
+
+  const customGoals = goals.filter(g => g.id !== EMERGENCY_GOAL_ID && g.target > 0);
+  if(customGoals.length){
+    const avgPct = customGoals.reduce((s,g) => s + goalPct(g), 0) / customGoals.length;
+    factors.push({key:'goals', weight:10, score:(avgPct/100)*10, detail:`${Math.round(avgPct)}% average progress`});
+  }
+
+  const totalDebt = Number(assets.debt || 0);
+  const debtRatio = totalAssets > 0 ? totalDebt/totalAssets : (totalDebt > 0 ? 1 : 0);
+  const debtScoreRatio = Math.max(0, Math.min(1, 1-debtRatio));
+  factors.push({key:'debt', weight:20, score: debtScoreRatio*20, detail: totalDebt>0 ? `${money(totalDebt)} owed` : 'Debt-free'});
+
+  return factors;
+}
+
+function computeHealthScore(){
+  const factors = computeHealthFactors();
+  const totalWeight = factors.reduce((s,f) => s+f.weight, 0);
+  const totalScore = factors.reduce((s,f) => s+f.score, 0);
+  const pct = totalWeight > 0 ? Math.round(totalScore/totalWeight*100) : null;
+  return {pct, factors};
+}
+
+function healthBand(pct){
+  if(pct >= 75) return {label:'Excellent', cls:'excellent', emoji:'🟢'};
+  if(pct >= 50) return {label:'Good', cls:'good', emoji:'🟡'};
+  if(pct >= 25) return {label:'Needs Work', cls:'fair', emoji:'🟠'};
+  return {label:'At Risk', cls:'poor', emoji:'🔴'};
+}
+
+function renderHealthTeaser(){
+  const {pct, factors} = computeHealthScore();
+  const numEl = document.getElementById('healthScoreNum');
+  const badgeEl = document.getElementById('healthScoreBadge');
+  const meterWrap = document.getElementById('healthScoreMeterWrap');
+  const fillEl = document.getElementById('healthScoreMeterFill');
+  const emptyEl = document.getElementById('healthScoreEmpty');
+
+  if(pct === null || factors.length < HEALTH_MIN_FACTORS){
+    numEl.innerHTML = '—';
+    badgeEl.textContent = '';
+    badgeEl.className = 'health-score-badge';
+    meterWrap.style.display = 'none';
+    emptyEl.style.display = '';
+    return;
+  }
+  const band = healthBand(pct);
+  numEl.innerHTML = `${pct}<small>/100</small>`;
+  badgeEl.textContent = `${band.emoji} ${band.label}`;
+  badgeEl.className = 'health-score-badge ' + band.cls;
+  meterWrap.style.display = '';
+  fillEl.className = 'meter-fill' + (pct < 50 ? ' over' : '');
+  fillEl.style.width = pct + '%';
+  emptyEl.style.display = 'none';
+}
+
+function renderHealthOverlay(){
+  const {pct, factors} = computeHealthScore();
+  const band = (pct !== null && factors.length >= HEALTH_MIN_FACTORS) ? healthBand(pct) : null;
+
+  const rows = Object.keys(HEALTH_FACTOR_LABELS).map(key => {
+    const f = factors.find(x => x.key === key);
+    if(!f){
+      return `
+        <div class="health-factor-row na">
+          <div class="hf-label"><span>${HEALTH_FACTOR_LABELS[key]}</span><b>N/A</b></div>
+          <div class="meter"><div class="meter-fill" style="width:0%"></div></div>
+          <div class="health-factor-note">${HEALTH_FACTOR_NA_NOTES[key]}</div>
+        </div>`;
+    }
+    const pctOfMax = Math.round(f.score/f.weight*100);
+    return `
+      <div class="health-factor-row">
+        <div class="hf-label"><span>${HEALTH_FACTOR_LABELS[key]}</span><b>${Math.round(f.score)}/${f.weight} pts</b></div>
+        <div class="meter"><div class="meter-fill ${pctOfMax<50?'over':''}" style="width:${pctOfMax}%"></div></div>
+        <div class="health-factor-note">${f.detail}</div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('healthOverlayContent').innerHTML = `
+    <div class="profile-card">
+      <div class="p-title">Financial Health Score</div>
+      ${band ? `
+        <div class="health-score-row">
+          <div class="health-score-num">${pct}<small>/100</small></div>
+          <div class="health-score-badge ${band.cls}">${band.emoji} ${band.label}</div>
+        </div>
+        <div class="meter" style="margin-top:12px;"><div class="meter-fill ${pct<50?'over':''}" style="width:${pct}%"></div></div>
+      ` : `<div class="health-score-empty">Add assets, income entries, or goals to calculate your score</div>`}
+    </div>
+    <div class="profile-card">
+      <div class="p-title">Breakdown</div>
+      ${rows}
+      <button class="wealth-edit-btn" id="editFinancesBtn">✎ Update assets &amp; debt</button>
+    </div>
+  `;
+  document.getElementById('editFinancesBtn').addEventListener('click', openAssetsSheet);
+}
+
+function openHealthOverlay(){
+  renderHealthOverlay();
+  document.getElementById('healthOverlay').classList.add('show');
+}
+function closeHealthOverlay(){
+  document.getElementById('healthOverlay').classList.remove('show');
+}
+document.getElementById('healthScoreCard').addEventListener('click', openHealthOverlay);
+document.getElementById('healthOverlayBack').addEventListener('click', closeHealthOverlay);
 
 /* ---------------- Savings goals ---------------- */
 const GOALS_KEY = 'curroute_goals_v1';
@@ -2603,6 +2825,7 @@ function renderProfile(){
 
   renderGoalsTeaser();
   renderWealthTeaser();
+  renderHealthTeaser();
 }
 
 /* ---------------- Savings goals rendering ---------------- */
